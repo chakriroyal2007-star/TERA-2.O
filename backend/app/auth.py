@@ -324,7 +324,13 @@ def mfa_confirm(data: MFACode, user=Depends(current), db=Depends(get_db)):
 async def google(request: Request):
     if not settings().google_configured:
         raise HTTPException(503, "Google Sign-In has not been configured")
-    return await oauth.google.authorize_redirect(request, settings().public_url.rstrip("/") + "/api/v1/auth/google/callback")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    proto = request.headers.get("x-forwarded-proto") or ("https" if "vercel.app" in host else "http")
+    if host and not host.startswith("localhost") and not host.startswith("127.0.0.1"):
+        redirect_uri = f"{proto}://{host}/api/v1/auth/google/callback"
+    else:
+        redirect_uri = settings().public_url.rstrip("/") + "/api/v1/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
 @router.get("/google/callback")
@@ -338,18 +344,22 @@ async def google_callback(request: Request, db=Depends(get_db)):
         raise HTTPException(403, "A verified Google email is required")
     user = db.scalar(select(User).where(User.google_subject == info["sub"]).with_for_update())
     if not user:
-        if db.scalar(select(User).where(User.email == info["email"].lower())):
-            raise HTTPException(409, "This email already has an account. Sign in using your existing method.")
-        user = User(
-            email=info["email"].lower(),
-            name=info.get("name", info["email"]),
-            verified=True,
-            google_subject=info["sub"],
-            onboarding_completed=False,
-            role="citizen",
-        )
-        db.add(user)
-        db.flush()
+        existing_user = db.scalar(select(User).where(User.email == info["email"].lower()).with_for_update())
+        if existing_user:
+            existing_user.google_subject = info["sub"]
+            existing_user.verified = True
+            user = existing_user
+        else:
+            user = User(
+                email=info["email"].lower(),
+                name=info.get("name", info["email"]),
+                verified=True,
+                google_subject=info["sub"],
+                onboarding_completed=False,
+                role="citizen",
+            )
+            db.add(user)
+            db.flush()
     if user.suspended:
         raise HTTPException(403, "Account unavailable")
     if user.mfa_enabled:

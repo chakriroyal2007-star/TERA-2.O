@@ -31,7 +31,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=settings().secret_key,
     session_cookie="tera_oauth",
-    https_only=settings().cookie_secure,
+    https_only=False,
     same_site="lax",
     max_age=600,
 )

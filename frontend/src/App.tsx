@@ -355,7 +355,8 @@ export function App() {
       <Route path="/track/:code" element={<TrackPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/onboarding" element={<GoogleOnboarding />} />
-      <Route path="/dbms/*" element={<Navigate to="/app/dbms" replace />} />
+      <Route path="/dbms" element={<PublicDbmsPage />} />
+      <Route path="/dbms/*" element={<PublicDbmsPage />} />
       <Route path="/app/*" element={<Shell />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
