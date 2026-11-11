@@ -37,8 +37,10 @@ try:
             db.add(horg)
             db.flush()
 
-        # Seed Demo Accounts for Instant Quick-Launch
+        # Seed Demo & Admin Accounts
         demo_users = [
+            ("beesvenkatrahul@gmail.com", "Venkat Rahul", "admin", "Emergency@2025!", org.id),
+            ("chakriroyal2007@gmail.com", "Chakri", "admin", "Emergency@2025!", org.id),
             ("admin@tera.org", "System Administrator", "admin", "Emergency@2025!", org.id),
             ("operator@tera.org", "Control Operator", "operator", "Emergency@2025!", org.id),
             ("hospital@tera.org", "Hospital Coordinator", "hospital", "Emergency@2025!", horg.id),
@@ -47,7 +49,8 @@ try:
             ("admin@tera.local", "Local Administrator", "admin", "Admin@12345678", org.id),
         ]
         for email, name, role, pw, oid in demo_users:
-            if not db.query(m.User).filter_by(email=email).first():
+            u = db.query(m.User).filter_by(email=email).first()
+            if not u:
                 db.add(
                     m.User(
                         email=email,
@@ -58,6 +61,10 @@ try:
                         organization_id=oid,
                     )
                 )
+            else:
+                u.role = role
+                u.verified = True
+                u.password_hash = passwords.hash(pw)
         db.flush()
 
         # Seed Demo Hospital & Emergency Capacity
