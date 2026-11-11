@@ -101,15 +101,15 @@ export function Login() {
   const [directRole, setDirectRole] = useState<string | null>(null);
   const [directError, setDirectError] = useState<unknown>(null);
 
-  const handleDirectLogin = async (accEmail: string, roleName: string) => {
+  const handleDirectLogin = async (accEmail: string, roleName: string, accPassword = "Emergency@2025!") => {
     setDirectRole(roleName);
     setDirectError(null);
     setEmail(accEmail);
-    setPassword("test-passphrase-123");
+    setPassword(accPassword);
     try {
       const user = await api<User>("/auth/login", "POST", {
         email: accEmail,
-        password: "test-passphrase-123",
+        password: accPassword,
         mfa_code: null,
       });
       // Synchronously populate user in cache to eliminate 401 redirect race condition
@@ -218,6 +218,72 @@ export function Login() {
           <div className="eyebrow">Secure team access</div>
           <h2>{title}</h2>
           <p>Use your verified account to continue.</p>
+
+          {/* 1-Click Quick Admin Access */}
+          <div style={{
+            background: "rgba(16, 185, 129, 0.08)",
+            border: "1px solid rgba(16, 185, 129, 0.25)",
+            borderRadius: "10px",
+            padding: "0.85rem",
+            marginBottom: "1.25rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem"
+          }}>
+            <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "#34d399", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              ⚡ 1-Click Administrator Sign-In
+            </div>
+            <button
+              type="button"
+              disabled={directRole === "Admin"}
+              onClick={() => handleDirectLogin("beesvenkatrahul@gmail.com", "Admin", "Emergency@2025!")}
+              style={{
+                width: "100%",
+                padding: "0.6rem 0.85rem",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: 700,
+                fontSize: "0.88rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                boxShadow: "0 2px 8px rgba(16, 185, 129, 0.25)"
+              }}
+            >
+              <span>👤 Venkat Rahul (Admin)</span>
+              <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+                {directRole === "Admin" ? "Authenticating..." : "1-Click Login →"}
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={directRole === "Chakri"}
+              onClick={() => handleDirectLogin("chakriroyal2007@gmail.com", "Chakri", "Emergency@2025!")}
+              style={{
+                width: "100%",
+                padding: "0.5rem 0.85rem",
+                background: "rgba(16, 185, 129, 0.15)",
+                color: "#34d399",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                borderRadius: "6px",
+                fontWeight: 600,
+                fontSize: "0.84rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+              }}
+            >
+              <span>👤 Chakri (Admin)</span>
+              <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                {directRole === "Chakri" ? "Authenticating..." : "1-Click Login →"}
+              </span>
+            </button>
+          </div>
+
           {mode === "password" && (
             <>
               {providers.data?.google && (
@@ -225,6 +291,9 @@ export function Login() {
                   <a className="google-button" href={apiUrl("/auth/google")}>
                     <strong aria-hidden="true">G</strong> Continue with Google
                   </a>
+                  <small style={{ color: "#94a3b8", fontSize: "0.78rem", display: "block", marginTop: "0.35rem", textAlign: "center" }}>
+                    If Google shows "redirect_uri_mismatch", use the 1-Click Admin buttons above.
+                  </small>
                   <div className="divider">or use your email</div>
                 </>
               )}
