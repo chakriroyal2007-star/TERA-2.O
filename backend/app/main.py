@@ -70,7 +70,7 @@ async def security_headers(request: Request, call_next):
                     "http://127.0.0.1:8000",
                     "http://testserver",
                 ])
-            if origin not in allowed:
+            if origin not in allowed and not origin.endswith(".vercel.app"):
                 return JSONResponse({"detail": "Origin not allowed"}, 403)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -96,8 +96,10 @@ def health():
     try:
         with engine.connect() as c:
             c.execute(text("SELECT 1"))
-    except Exception:
-        return JSONResponse({"status": "unavailable", "database": "unavailable"}, 503)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"status": "unavailable", "database": "unavailable", "error": str(exc)}, 503)
     rate_limiter = "redis"
     try:
         redis.ping()

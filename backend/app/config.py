@@ -1,15 +1,16 @@
+import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    database_url: str
+    database_url: str = "sqlite:////tmp/tera.db"
     redis_url: str = "redis://redis:6379/0"
-    secret_key: str
+    secret_key: str = "tera-2-production-key-secret-938210481234"
     environment: str = "development"
     public_url: str = "http://localhost:8080"
-    cors_origins: str = "http://localhost:8080,http://localhost:5173,http://127.0.0.1:8080,http://127.0.0.1:5173,http://localhost:3000,https://tera-project-dbms.vercel.app,https://tera2-three.vercel.app"
+    cors_origins: str = "http://localhost:8080,http://localhost:5173,http://127.0.0.1:8080,http://127.0.0.1:5173,http://localhost:3000,https://tera-project-dbms.vercel.app,https://tera2-three.vercel.app,https://tera-2.vercel.app,https://tera-2-0.vercel.app,https://tera-2-o.vercel.app,https://tera2.vercel.app"
     cookie_secure: bool = False
     smtp_host: str = "mailpit"
     smtp_port: int = 1025
@@ -56,6 +57,11 @@ class Settings(BaseSettings):
 @lru_cache
 def settings():
     s = Settings()
+    if os.getenv("VERCEL"):
+        if "@postgres" in s.database_url or "localhost" in s.database_url:
+            s.database_url = "sqlite:////tmp/tera.db"
+        if not s.public_url or "localhost" in s.public_url:
+            s.public_url = "https://tera-2-0.vercel.app"
     if len(s.secret_key) < 32:
         raise RuntimeError("SECRET_KEY must contain at least 32 characters")
     if s.environment == "production" and (not s.cookie_secure or not s.public_url.startswith("https://")):
