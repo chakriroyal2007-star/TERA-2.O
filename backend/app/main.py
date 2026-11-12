@@ -14,6 +14,19 @@ from .dbms.router import router as dbms_router
 
 app = FastAPI(title="TERA coordination API", version="2.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        from .db import engine, Base, SessionLocal
+        from .bootstrap import bootstrap_defaults
+        Base.metadata.create_all(engine)
+        with SessionLocal() as db:
+            bootstrap_defaults(db)
+    except Exception as e:
+        print("Startup bootstrap warning:", e)
+
+
 # CORS setup
 cors_origins_list = [o.strip() for o in settings().cors_origins.split(",") if o.strip()]
 if settings().public_url not in cors_origins_list:

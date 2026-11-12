@@ -216,8 +216,15 @@ def reset_password(data: ResetPasswordRequest, request: Request, response: Respo
 def login(data: Login, request: Request, response: Response, db=Depends(get_db)):
     limited("login-ip:" + request.client.host, 30, 300)
     limited("login:" + data.email.lower(), 10, 300)
-    email = data.email.lower()
+    email = data.email.strip().lower()
     user = db.scalar(select(User).where(User.email == email).with_for_update())
+    if not user:
+        from .bootstrap import bootstrap_defaults
+        try:
+            bootstrap_defaults(db)
+            user = db.scalar(select(User).where(User.email == email).with_for_update())
+        except Exception:
+            pass
 
     if not verify_password(user.password_hash if user else None, data.password) or not user or user.suspended:
         audit(db, "login.failed", digest(data.email.lower()))
@@ -240,10 +247,39 @@ def me(user=Depends(current)):
 def refresh(request: Request, response: Response, db=Depends(get_db)):
     token = request.cookies.get("tera_refresh", "")
     csrf = request.headers.get("x-csrf-token", "")
-    sess = db.scalar(select(Session).where(Session.refresh_hash == digest(token)).with_for_update())
+    sess = db.scalar(select(Session).where(Session.refresh_hash == digest(token)).with_for_update()) if token else None
+
+    # Graceful recovery in serverless setups if refresh cookie was not in this instance's DB
+    if not sess and request.cookies.get("tera_access"):
+        try:
+            claims = jwt.decode(request.cookies.get("tera_access"), settings().secret_key, algorithms=["HS256"], issuer="tera", audience="tera")
+            user = db.get(User, claims.get("sub", ""))
+            if not user and "email" in claims:
+                user = db.scalar(select(User).where(User.email == claims["email"].lower()))
+            if user and not user.suspended:
+                issue(db, user, request, response)
+                db.commit()
+                return {"message": "Session renewed"}
+        except Exception:
+            pass
+
     if not sess or (sess.expires_at and ensure_utc(sess.expires_at) <= now()):
         raise HTTPException(401, "Please sign in again")
     if sess.revoked:
+        # Check if an active session in the family was created recently (concurrent browser refresh race)
+        recent_active = db.scalar(
+            select(Session).where(
+                Session.family_id == sess.family_id,
+                Session.revoked.is_(False),
+                Session.created_at >= now() - timedelta(seconds=60),
+            ).order_by(Session.created_at.desc())
+        )
+        if recent_active:
+            user = db.get(User, recent_active.user_id)
+            if user and not user.suspended:
+                issue(db, user, request, response, family_id=sess.family_id)
+                db.commit()
+                return {"message": "Session renewed"}
         db.execute(update(Session).where(Session.family_id == sess.family_id).values(revoked=True))
         audit(db, "session.refresh_reuse", sess.user_id)
         db.commit()

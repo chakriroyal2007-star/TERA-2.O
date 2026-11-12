@@ -32,7 +32,20 @@ export function csrf() {
       ?.split("=")[1] || ""
   );
 }
-let refreshing: Promise<Response> | null = null;
+let refreshing: Promise<boolean> | null = null;
+async function doRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl("/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": csrf() },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -60,14 +73,11 @@ export async function api<T = any>(
     retry &&
     (!path.startsWith("/auth/") || path === "/auth/me")
   ) {
-    refreshing ||= fetch(apiUrl("/auth/refresh"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "X-CSRF-Token": csrf() },
-    }).finally(() => {
+    refreshing = refreshing || doRefresh().finally(() => {
       refreshing = null;
     });
-    if ((await refreshing).ok) return api<T>(path, method, body, false);
+    const refreshed = await refreshing;
+    if (refreshed) return api<T>(path, method, body, false);
   }
   if (!res.ok) {
     const data = await res

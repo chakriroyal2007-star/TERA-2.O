@@ -396,16 +396,25 @@ class Restriction(BaseModel):
     denied: bool
 
 
+_actions_cache: list[str] | None = None
+
+
 def actions(request):
-    return sorted(
-        method.upper() + " " + path
-        for path, methods in request.app.openapi()["paths"].items()
-        for method in methods
-        if method in ("get", "post", "patch", "delete")
-        and path.startswith("/api/v1/")
-        and "/auth/" not in path
-        and "/public/" not in path
-    )
+    global _actions_cache
+    if _actions_cache is None:
+        try:
+            _actions_cache = sorted(
+                method.upper() + " " + path
+                for path, methods in request.app.openapi().get("paths", {}).items()
+                for method in methods
+                if method in ("get", "post", "patch", "delete")
+                and path.startswith("/api/v1/")
+                and "/auth/" not in path
+                and "/public/" not in path
+            )
+        except Exception:
+            _actions_cache = []
+    return _actions_cache
 
 
 @router.get("/permissions")

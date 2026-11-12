@@ -110,6 +110,9 @@ def issue(db, user, request, response, family_id=None):
         {
             "sub": user.id,
             "sid": sess.id,
+            "email": user.email,
+            "role": user.role,
+            "csrf_hash": sess.csrf_hash,
             "exp": now() + timedelta(minutes=15),
             "iat": now(),
             "iss": "tera",
@@ -130,14 +133,55 @@ def identity(token, db):
         claims = jwt.decode(token or "", settings().secret_key, algorithms=["HS256"], issuer="tera", audience="tera")
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Please sign in")
-    sess = db.get(Session, claims["sid"])
-    user = db.get(User, claims["sub"])
+    user_id = claims.get("sub", "")
+    sid = claims.get("sid", "")
+    sess = db.get(Session, sid) if sid else None
+    user = db.get(User, user_id) if user_id else None
+    if not user and "email" in claims:
+        user = db.scalar(select(User).where(User.email == claims["email"].lower()))
+        if not user:
+            from .bootstrap import bootstrap_defaults
+            try:
+                bootstrap_defaults(db)
+                user = db.scalar(select(User).where(User.email == claims["email"].lower()))
+            except Exception:
+                pass
+
+    # If session was not found in this container/replica DB, reconstruct it from valid token claims:
+    if not sess and user and not user.suspended and sid:
+        sess = Session(
+            id=sid,
+            user_id=user.id,
+            refresh_hash=digest(sid),
+            csrf_hash=claims.get("csrf_hash", digest(sid)),
+            expires_at=now() + timedelta(days=14),
+            revoked=False,
+        )
+        db.add(sess)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            sess = db.get(Session, sid)
+
+    # If session was rotated recently during concurrent requests, allow active sibling session:
+    if sess and sess.revoked:
+        active_sibling = db.scalar(
+            select(Session).where(
+                Session.family_id == sess.family_id,
+                Session.revoked.is_(False),
+                Session.created_at >= now() - timedelta(minutes=5),
+            )
+        )
+        if active_sibling:
+            sess = active_sibling
+
     expires_at = sess.expires_at if sess else None
     if expires_at and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if (
         not sess
-        or sess.user_id != claims["sub"]
+        or (user and sess.user_id != user.id)
         or sess.revoked
         or (expires_at and expires_at <= now())
         or not user

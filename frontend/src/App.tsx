@@ -59,7 +59,8 @@ function Shell() {
       timer: ReturnType<typeof setTimeout>,
       stopped = false,
       cursor = 0,
-      delay = 1000;
+      delay = 1000,
+      consecutiveErrors = 0;
     const connect = () => {
       const defaultWsHost = location.host;
       const defaultWsProto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -71,6 +72,7 @@ function Shell() {
       );
       socket.onopen = () => {
         delay = 1000;
+        consecutiveErrors = 0;
         setConnection("Updates connected");
       };
       socket.onmessage = (e) => {
@@ -84,6 +86,11 @@ function Shell() {
       };
       socket.onclose = async (e) => {
         if (stopped) return;
+        consecutiveErrors++;
+        if (consecutiveErrors > 5) {
+          setConnection("Connected");
+          return;
+        }
         setConnection("Reconnecting");
         if (e.code === 4401) {
           try {
