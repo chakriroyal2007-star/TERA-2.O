@@ -68,13 +68,18 @@ async def extract_context(transcript: str, language: str | None = None) -> Extra
     if s.testing:
         return extract_incident_from_transcript(transcript, language)
     try:
-        if not s.openai_api_key:
+        # Reporter voice extraction uses the same server-side OpenRouter
+        # configuration as the companion.  Keep OPENAI_* only as a legacy
+        # fallback for existing installations.
+        api_key = s.openrouter_api_key or s.openai_api_key
+        model = s.openrouter_model or s.openai_model
+        if not api_key:
             raise ValueError("LLM is not configured")
         async with httpx.AsyncClient(timeout=45) as client:
             response = await client.post(
                 s.openai_base_url.rstrip("/") + "/chat/completions",
-                headers={"Authorization": "Bearer " + s.openai_api_key},
-                json={"model": s.openai_model, "temperature": 0,
+                headers={"Authorization": "Bearer " + api_key},
+                json={"model": model, "temperature": 0,
                       "response_format": {"type": "json_object"},
                       "messages": [{"role": "system", "content": SYSTEM + "\nSchema:\n" + json.dumps(ExtractedIncident.model_json_schema())},
                                    {"role": "user", "content": transcript}], "max_tokens": 2500},
@@ -82,7 +87,7 @@ async def extract_context(transcript: str, language: str | None = None) -> Extra
             response.raise_for_status()
         data = json.loads(response.json()["choices"][0]["message"]["content"])
         data["source_transcript"] = transcript
-        data["extraction_provider"] = s.openai_model
+        data["extraction_provider"] = model
         extracted = reconcile(ExtractedIncident.model_validate(data))
         extracted.extraction_status = "needs_review"
         return extracted
