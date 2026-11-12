@@ -41,9 +41,13 @@ class Settings(BaseSettings):
 
     # Sarvam AI Voice Agent Configuration
     sarvam_api_key: str = ""
+    # OpenRouter is the only LLM gateway used by the emergency companion.
+    # OPENAI_* remains as a backwards-compatible local configuration alias.
+    openrouter_api_key: str = ""
+    openrouter_model: str = ""
     openai_api_key: str = ""
     openai_base_url: str = "https://openrouter.ai/api/v1"
-    openai_model: str = "openai/gpt-4.1-mini"
+    openai_model: str = "nvidia/nemotron-3.5-lightning:free"
     sarvam_org_id: str = "org_tera_prod"
     sarvam_workspace_id: str = "ws_tera_companion"
     sarvam_agent_id: str = "agent_tera_firstaid"

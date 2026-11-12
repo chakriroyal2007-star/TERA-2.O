@@ -79,6 +79,8 @@ services:
       SPEECH_PROVIDER_ENDPOINT: ${SPEECH_PROVIDER_ENDPOINT:-}
       RECORDINGS_DIR: /data/recordings
       SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4.1-mini}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-openai/gpt-4.1-mini}

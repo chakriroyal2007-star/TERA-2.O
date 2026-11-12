@@ -833,56 +833,9 @@ export function ReportPage() {
         <PageHead
           eyebrow="TERA Emergency Assistance"
           title="Report an emergency."
-          action={
-            <button
-              type="button"
-              onClick={() => setCompanionOpen(true)}
-              style={{
-                background: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "8px",
-                padding: "8px 14px",
-                fontSize: "0.9rem",
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                cursor: "pointer",
-                boxShadow: "0 0 15px rgba(239, 68, 68, 0.4)",
-              }}
-            >
-              <HeartPulse size={16} /> AI First-Aid Companion
-            </button>
-          }
         >
-          Speak in your language or enter details below. No account required.
+          Speak in your language or enter details below. After you submit, launch the AI Companion with your saved incident details.
         </PageHead>
-
-        {companionOpen && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0, 0, 0, 0.85)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 2000,
-              padding: "1rem",
-            }}
-          >
-            <div style={{ maxWidth: "900px", width: "100%" }}>
-              <EmergencyCompanion
-                initialCategory={form.watch("category") || "bleeding"}
-                onClose={() => setCompanionOpen(false)}
-              />
-            </div>
-          </div>
-        )}
 
         {/* National Emergency Hotline Direct Call Guidance */}
         <div

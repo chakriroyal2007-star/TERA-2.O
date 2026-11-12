@@ -10,7 +10,7 @@ Includes:
 
 import hmac
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc, text
@@ -41,6 +41,8 @@ from .engine import (
     EmergencyConversationService,
     EmergencyHandoverService,
 )
+from .videos import VERIFIED_EMERGENCY_VIDEOS, find_video_for_situation
+from .ai_service import AICompanionService, LANGUAGE_MAP
 
 router = APIRouter(prefix="/companion", tags=["AI Emergency First-Aid Companion"])
 
@@ -90,6 +92,36 @@ class ProtocolReviewRequest(BaseModel):
     comments: str = Field(min_length=5, max_length=2000)
 
 
+class StartCompanionRequest(BaseModel):
+    incident_id: str | None = None
+    tracking_code: str | None = None
+    category: str | None = None
+    description: str | None = None
+    language: Literal["en", "te", "hi", "ta", "kn", "ml"] = "en"
+
+
+class CompanionChatRequest(BaseModel):
+    session_id: str
+    message: str = Field(min_length=1, max_length=5000)
+    language: Literal["en", "te", "hi", "ta", "kn", "ml"] | None = None
+
+
+class ToggleActionRequest(BaseModel):
+    session_id: str
+    step_number: int
+    completed: bool
+
+
+class EscalateCompanionRequest(BaseModel):
+    session_id: str
+    reason: str | None = "Citizen requested emergency operator escalation."
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    language: Literal["en", "te", "hi", "ta", "kn", "ml"] = "en"
+
+
 # ==============================================================================
 # Health and Diagnostics
 # ==============================================================================
@@ -115,6 +147,415 @@ async def companion_health(db: Session = Depends(get_db)):
             "supported_languages": ["en", "te", "hi", "ta", "kn", "ml"],
         },
     }
+
+
+# ==============================================================================
+# Verified Video Guidance Library
+# ==============================================================================
+
+@router.get("/videos")
+def list_verified_videos():
+    """Returns the complete library of verified emergency instructional videos."""
+    return {"videos": list(VERIFIED_EMERGENCY_VIDEOS.values())}
+
+
+@router.get("/videos/{video_id}")
+def get_verified_video(video_id: str):
+    """Retrieves a specific emergency instructional video by ID or situation."""
+    if video_id in VERIFIED_EMERGENCY_VIDEOS:
+        return VERIFIED_EMERGENCY_VIDEOS[video_id]
+    match = find_video_for_situation(video_id)
+    if match:
+        return match
+    raise HTTPException(404, "Emergency video not found")
+
+
+# ==============================================================================
+# Speech Engine (Sarvam AI STT & TTS)
+# ==============================================================================
+
+@router.post("/transcribe")
+async def transcribe_speech(
+    file: UploadFile = File(...),
+    language: str = Form("en"),
+):
+    """Transcribes citizen emergency audio stream using Sarvam AI Speech-to-Text."""
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(400, "Empty audio recording received")
+    res = await AICompanionService.transcribe_audio(
+        audio_bytes=audio_bytes,
+        filename=file.filename or "speech.webm",
+        language=language,
+    )
+    return res
+
+
+@router.post("/speech")
+async def synthesize_speech(data: SpeechRequest):
+    """Synthesizes emergency operator voice using Sarvam AI Bulbul TTS."""
+    res = await AICompanionService.synthesize_speech(
+        text=data.text,
+        language=data.language,
+    )
+    return res
+
+
+# ==============================================================================
+# Intelligent Multilingual AI Emergency Companion
+# ==============================================================================
+
+@router.post("/start")
+async def start_or_resume_companion(
+    data: StartCompanionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Starts or resumes an intelligent multilingual emergency companion session."""
+    from app.workflow import tracked
+
+    incident = None
+    if data.tracking_code:
+        incident = tracked(db, data.tracking_code)
+        if data.incident_id and incident.id != data.incident_id:
+            raise HTTPException(404, "Incident not found")
+    elif data.incident_id:
+        # An incident ID alone is not a citizen capability. Staff access is
+        # checked through the normal incident scope rules.
+        from app.security import current
+        incident = get_incident(db, data.incident_id, current(request, db))
+    else:
+        raise HTTPException(400, "Launch AI Companion from a submitted emergency report")
+
+    # Build incident context
+    if incident:
+        inc_context = {
+            "incident_id": incident.id,
+            "case_id": incident.case_id,
+            "category": incident.category,
+            "description": incident.description,
+            "address": incident.address,
+            "severity": incident.priority,
+            "status": incident.status,
+            "people_affected": incident.casualties_count,
+            "injuries": incident.injuries_description,
+            "immediate_hazards": incident.immediate_hazards,
+        }
+    lang = data.language if data.language in LANGUAGE_MAP else "en"
+
+    # Check for active existing session
+    session = None
+    if incident:
+        session = db.scalar(
+            select(EmergencyAssistanceSession)
+            .where(EmergencyAssistanceSession.incident_id == incident.id, EmergencyAssistanceSession.channel == "web_voice")
+            .order_by(desc(EmergencyAssistanceSession.created_at))
+        )
+
+    if session:
+        # Resume existing session
+        messages = db.scalars(
+            select(EmergencyConversationMessage)
+            .where(EmergencyConversationMessage.session_id == session.id)
+            .order_by(EmergencyConversationMessage.created_at)
+        ).all()
+
+        actions = db.scalars(
+            select(EmergencyAssistanceAction)
+            .where(EmergencyAssistanceAction.session_id == session.id)
+            .order_by(EmergencyAssistanceAction.step_number)
+        ).all()
+
+        ctx = session.context_json or {}
+        video = ctx.get("video")
+        if not video:
+            video = find_video_for_situation(f"{inc_context['category']} {inc_context['description']}")
+
+        return {
+            "session_id": session.id,
+            "resumed": True,
+            "incident": inc_context,
+            "language": session.selected_language,
+            "status": session.status,
+            "urgency": ctx.get("urgency", "HIGH"),
+            "risk_assessment": ctx.get("risk_assessment", "Emergency situation under active guidance."),
+            "actions": [
+                {
+                    "step_number": a.step_number,
+                    "instruction": a.instruction_delivered,
+                    "completed": a.status == "completed_by_citizen",
+                }
+                for a in actions
+            ] if actions else ctx.get("actions", []),
+            "video": video,
+            "messages": [
+                {
+                    "id": m.id,
+                    "speaker": m.speaker,
+                    "content": m.content,
+                    "created_at": m.created_at.isoformat(),
+                }
+                for m in messages
+            ],
+            "audio_base64": None,
+        }
+
+    # Generate fresh AI initial guidance
+    ai_res = await AICompanionService.generate_response(
+        incident_context=inc_context,
+        conversation_history=[],
+        language=lang,
+    )
+
+    # Synthesize opening voice guidance
+    tts_text = f"{ai_res['message']} {ai_res.get('follow_up_question', '')}"
+    speech_res = await AICompanionService.synthesize_speech(tts_text, language=lang)
+
+    # Persist session in DB if incident exists
+    session_id = f"sess_{now().strftime('%Y%m%d%H%M%S')}_{lang}"
+    if incident:
+        session = EmergencyAssistanceSession(
+            incident_id=incident.id,
+            status="guidance_active",
+            channel="web_voice",
+            selected_language=lang,
+            current_step_number=1,
+            context_json={
+                "urgency": ai_res.get("urgency", "HIGH"),
+                "risk_assessment": ai_res.get("risk_assessment", ""),
+                "video": ai_res.get("video"),
+                "actions": [
+                    {"step_number": idx + 1, "instruction": act, "completed": False}
+                    for idx, act in enumerate(ai_res.get("immediate_actions", []))
+                ],
+            },
+        )
+        db.add(session)
+        db.flush()
+        session_id = session.id
+
+        # Add initial AI message
+        full_msg = f"{ai_res['message']}\n\n{ai_res.get('follow_up_question', '')}".strip()
+        db.add(
+            EmergencyConversationMessage(
+                session_id=session.id,
+                speaker="ai",
+                language=lang,
+                content=full_msg,
+                step_number=1,
+            )
+        )
+
+        # Record initial actions
+        for idx, act in enumerate(ai_res.get("immediate_actions", [])):
+            db.add(
+                EmergencyAssistanceAction(
+                    session_id=session.id,
+                    step_number=idx + 1,
+                    instruction_delivered=act,
+                    language=lang,
+                    status="delivered",
+                )
+            )
+        db.commit()
+
+    return {
+        "session_id": session_id,
+        "resumed": False,
+        "incident": inc_context,
+        "language": lang,
+        "status": "guidance_active",
+        "urgency": ai_res.get("urgency", "HIGH"),
+        "risk_assessment": ai_res.get("risk_assessment", ""),
+        "message": ai_res.get("message"),
+        "follow_up_question": ai_res.get("follow_up_question", ""),
+        "actions": [
+            {"step_number": idx + 1, "instruction": act, "completed": False}
+            for idx, act in enumerate(ai_res.get("immediate_actions", []))
+        ],
+        "video": ai_res.get("video"),
+        "audio_base64": speech_res.get("audio_base64"),
+        "messages": [
+            {
+                "id": "init_1",
+                "speaker": "ai",
+                "content": f"{ai_res['message']}\n\n{ai_res.get('follow_up_question', '')}".strip(),
+                "created_at": now().isoformat(),
+            }
+        ],
+    }
+
+
+@router.post("/chat")
+async def companion_chat(
+    data: CompanionChatRequest,
+    db: Session = Depends(get_db),
+):
+    """Processes citizen input, performs structured AI reasoning, and returns video and audio guidance."""
+    session = db.get(EmergencyAssistanceSession, data.session_id)
+    if not session:
+        raise HTTPException(404, "Emergency assistance session not found")
+
+    incident = db.get(Incident, session.incident_id)
+    lang = data.language or session.selected_language or "en"
+    session.selected_language = lang
+
+    # Save citizen message
+    db.add(
+        EmergencyConversationMessage(
+            session_id=session.id,
+            speaker="citizen",
+            language=lang,
+            content=data.message,
+            step_number=session.current_step_number,
+        )
+    )
+    db.flush()
+
+    # Retrieve history
+    history_records = db.scalars(
+        select(EmergencyConversationMessage)
+        .where(EmergencyConversationMessage.session_id == session.id)
+        .order_by(EmergencyConversationMessage.created_at)
+    ).all()
+    history = [
+        {"speaker": m.speaker, "content": m.content}
+        for m in history_records[-10:]
+    ]
+
+    inc_context = {
+        "incident_id": incident.id if incident else session.incident_id,
+        "case_id": incident.case_id if incident else "TERA-EMERGENCY",
+        "category": incident.category if incident else "medical",
+        "description": incident.description if incident else "",
+        "address": incident.address if incident else "",
+        "severity": incident.priority if incident else "high",
+        "status": incident.status if incident else "active",
+    }
+
+    ai_res = await AICompanionService.generate_response(
+        incident_context=inc_context,
+        conversation_history=history,
+        user_message=data.message,
+        language=lang,
+    )
+
+    full_ai_text = f"{ai_res['message']}\n\n{ai_res.get('follow_up_question', '')}".strip()
+    session.current_step_number += 1
+
+    # Save AI message
+    db.add(
+        EmergencyConversationMessage(
+            session_id=session.id,
+            speaker="ai",
+            language=lang,
+            content=full_ai_text,
+            step_number=session.current_step_number,
+        )
+    )
+
+    # Update context_json and actions
+    ctx = session.context_json or {}
+    ctx["urgency"] = ai_res.get("urgency", ctx.get("urgency", "HIGH"))
+    ctx["risk_assessment"] = ai_res.get("risk_assessment", ctx.get("risk_assessment", ""))
+    if ai_res.get("video"):
+        ctx["video"] = ai_res["video"]
+
+    # Add any new actions
+    existing_actions = db.scalars(
+        select(EmergencyAssistanceAction)
+        .where(EmergencyAssistanceAction.session_id == session.id)
+        .order_by(EmergencyAssistanceAction.step_number)
+    ).all()
+
+    existing_texts = {a.instruction_delivered for a in existing_actions}
+    curr_max_step = max([a.step_number for a in existing_actions] or [0])
+
+    for act_text in ai_res.get("immediate_actions", []):
+        if act_text not in existing_texts:
+            curr_max_step += 1
+            db.add(
+                EmergencyAssistanceAction(
+                    session_id=session.id,
+                    step_number=curr_max_step,
+                    instruction_delivered=act_text,
+                    language=lang,
+                    status="delivered",
+                )
+            )
+
+    # Check human escalation requirement
+    if ai_res.get("requires_human_escalation"):
+        session.status = "escalation_required"
+        db.add(
+            AIEscalationEvent(
+                session_id=session.id,
+                incident_id=session.incident_id,
+                reason=f"AI Companion detected high danger: {ai_res.get('risk_assessment')}",
+                details=data.message,
+                escalation_level="urgent_dispatch",
+            )
+        )
+
+    session.context_json = ctx
+    db.commit()
+
+    # Synthesize voice
+    speech_res = await AICompanionService.synthesize_speech(
+        f"{ai_res['message']} {ai_res.get('follow_up_question', '')}",
+        language=lang,
+    )
+
+    # Reload all actions
+    all_actions = db.scalars(
+        select(EmergencyAssistanceAction)
+        .where(EmergencyAssistanceAction.session_id == session.id)
+        .order_by(EmergencyAssistanceAction.step_number)
+    ).all()
+
+    return {
+        "session_id": session.id,
+        "message": ai_res.get("message"),
+        "follow_up_question": ai_res.get("follow_up_question", ""),
+        "urgency": ai_res.get("urgency", "HIGH"),
+        "risk_assessment": ai_res.get("risk_assessment", ""),
+        "actions": [
+            {
+                "step_number": a.step_number,
+                "instruction": a.instruction_delivered,
+                "completed": a.status == "completed_by_citizen",
+            }
+            for a in all_actions
+        ],
+        "video": ctx.get("video"),
+        "audio_base64": speech_res.get("audio_base64"),
+        "requires_human_escalation": ai_res.get("requires_human_escalation", False),
+    }
+
+
+@router.post("/actions/toggle")
+def toggle_action_completed(
+    data: ToggleActionRequest,
+    db: Session = Depends(get_db),
+):
+    """Toggles completion status for an emergency action checklist item."""
+    session = db.get(EmergencyAssistanceSession, data.session_id)
+    if not session:
+        return {"status": "ok", "completed": data.completed}
+
+    action = db.scalar(
+        select(EmergencyAssistanceAction).where(
+            EmergencyAssistanceAction.session_id == session.id,
+            EmergencyAssistanceAction.step_number == data.step_number,
+        )
+    )
+    if action:
+        action.status = "completed_by_citizen" if data.completed else "delivered"
+        action.responded_at = now()
+        db.commit()
+        return {"status": "updated", "step_number": data.step_number, "completed": data.completed}
+
+    return {"status": "not_found", "step_number": data.step_number}
 
 
 # ==============================================================================
@@ -825,7 +1266,9 @@ async def persistent_assistance(data: AssistanceRequest, request: Request, db: S
         incident = get_incident(db, data.incident_id or '', user)
     # Never block the async event loop on a database row lock while another
     # request is awaiting a provider. Concurrent updates get an explicit retry.
-    locked = db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": "companion:" + incident.id})
+    locked = True
+    if db.bind and db.bind.dialect.name == "postgresql":
+        locked = db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": "companion:" + incident.id})
     if not locked:
         raise HTTPException(409, 'Another update is being saved. Please retry shortly.')
     session = db.scalar(select(EmergencyAssistanceSession).where(
