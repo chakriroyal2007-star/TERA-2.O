@@ -251,7 +251,11 @@ def report(data: IncidentCreate, request: Request, db=Depends(get_db)):
     if idem_key:
         if not 16 <= len(idem_key) <= 64:
             raise HTTPException(422, "Idempotency key must contain 16 to 64 characters")
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": idem_key})
+        try:
+            if db.bind and db.bind.dialect.name == "postgresql":
+                db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": idem_key})
+        except Exception:
+            pass
         existing = db.scalar(select(Incident).where(Incident.idempotency_key == idem_key))
         if existing:
             return {

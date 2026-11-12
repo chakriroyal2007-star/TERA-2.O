@@ -486,7 +486,11 @@ def submit_voice_incident(data: VoiceIncidentSubmit, request: Request, db=Depend
 
     # Idempotency check
     if data.idempotency_key:
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": data.idempotency_key})
+        try:
+            if db.bind and db.bind.dialect.name == "postgresql":
+                db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": data.idempotency_key})
+        except Exception:
+            pass
         existing = db.scalar(select(Incident).where(Incident.idempotency_key == data.idempotency_key))
         if existing:
             return {

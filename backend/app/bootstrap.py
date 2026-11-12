@@ -9,14 +9,26 @@ def deterministic_id(key: str) -> str:
 
 
 DEMO_USERS = [
+    # Primary Admin & Operator Personal Accounts
     ("beesvenkatrahul@gmail.com", "Venkat Rahul", "admin", "Emergency@2025!"),
     ("chakriroyal2007@gmail.com", "Chakri", "admin", "Emergency@2025!"),
+    ("venkatrahul2003@gmail.com", "Venkat Rahul", "operator", "Emergency@2025!"),
+    # Standard Role Accounts (@tera.org)
     ("admin@tera.org", "System Administrator", "admin", "Emergency@2025!"),
     ("operator@tera.org", "Control Operator", "operator", "Emergency@2025!"),
     ("hospital@tera.org", "Hospital Coordinator", "hospital", "Emergency@2025!"),
     ("responder@tera.org", "Field Responder", "responder", "Emergency@2025!"),
+    ("responder2@tera.org", "Field Responder Bravo", "responder", "Emergency@2025!"),
     ("analyst@tera.org", "Operational Analyst", "analyst", "Emergency@2025!"),
+    ("citizen@tera.org", "Citizen Reporter", "citizen", "Emergency@2025!"),
     ("admin@tera.local", "Local Administrator", "admin", "Admin@12345678"),
+    # Demo/Eval Role Accounts (@example.com)
+    ("admin@example.com", "System Administrator", "admin", "Emergency@2025!"),
+    ("operator@example.com", "Control Operator", "operator", "Emergency@2025!"),
+    ("hospital@example.com", "Hospital Coordinator", "hospital", "Emergency@2025!"),
+    ("responder@example.com", "Field Responder", "responder", "Emergency@2025!"),
+    ("analyst@example.com", "Operational Analyst", "analyst", "Emergency@2025!"),
+    ("citizen@example.com", "Citizen Reporter", "citizen", "Emergency@2025!"),
 ]
 
 
@@ -108,10 +120,9 @@ def bootstrap_defaults(db):
         db.flush()
 
         # 5. Seed Ambulances
-        if not db.scalar(select(m.Ambulance).where(m.Ambulance.registration == "TERA-AMB-01")):
-            db.add(m.Ambulance(organization_id=org.id, registration="TERA-AMB-01", active=True))
-        if not db.scalar(select(m.Ambulance).where(m.Ambulance.registration == "TERA-AMB-02")):
-            db.add(m.Ambulance(organization_id=org.id, registration="TERA-AMB-02", active=True))
+        for amb_reg in ["TERA-AMB-01", "TERA-AMB-02", "TERA-AMB-03", "TERA-AMB-04"]:
+            if not db.scalar(select(m.Ambulance).where(m.Ambulance.registration == amb_reg)):
+                db.add(m.Ambulance(organization_id=org.id, registration=amb_reg, active=True))
 
         db.commit()
     except Exception as e:

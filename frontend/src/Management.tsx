@@ -573,6 +573,7 @@ function AccessControls() {
             onChange={(e) => setSelected(e.target.value)}
           >
             <option value="">Select an account…</option>
+            {users.isLoading && <option disabled>Loading accounts…</option>}
             {users.data?.items.map((u: any) => (
               <option value={u.id} key={u.id}>
                 {u.name} · {u.email}
@@ -628,48 +629,54 @@ function AccessControls() {
           restriction never grants access beyond their role or organization.
         </p>
         <ErrorBox error={users.error || orgs.error || permissions.error} />
-        <DataForm
-          path="/permissions"
-          method="PUT"
-          submit="Update restriction"
-          fields={[
-            {
-              name: "user_id",
-              label: "User",
-              options: (users.data?.items || []).map((u: any) => ({
-                value: u.id,
-                label: u.name + " · " + u.email,
-              })),
-            },
-            {
-              name: "action",
-              label: "Action",
-              options: (permissions.data?.actions || []).map(
-                (value: string) => ({ value, label: value }),
-              ),
-            },
-            {
-              name: "denied",
-              label: "Restriction",
-              options: [
-                { value: "true", label: "Restrict action" },
-                { value: "false", label: "Restore role permission" },
-              ],
-            },
-          ]}
-          transform={(d) => ({ ...d, denied: d.denied === "true" })}
-        />
-        {permissions.data?.restrictions
-          .filter((r: any) => r.denied)
-          .map((r: any) => (
-            <div className="record" key={r.id}>
-              <strong>
-                {users.data?.items.find((u: any) => u.id === r.user_id)?.name ||
-                  r.user_id}
-              </strong>
-              <small>{r.action}</small>
-            </div>
-          ))}
+        {users.isLoading || permissions.isLoading ? (
+          <Loading />
+        ) : (
+          <>
+            <DataForm
+              path="/permissions"
+              method="PUT"
+              submit="Update restriction"
+              fields={[
+                {
+                  name: "user_id",
+                  label: "User",
+                  options: (users.data?.items || []).map((u: any) => ({
+                    value: u.id,
+                    label: u.name + " · " + u.email,
+                  })),
+                },
+                {
+                  name: "action",
+                  label: "Action",
+                  options: (permissions.data?.actions || []).map(
+                    (value: string) => ({ value, label: value }),
+                  ),
+                },
+                {
+                  name: "denied",
+                  label: "Restriction",
+                  options: [
+                    { value: "true", label: "Restrict action" },
+                    { value: "false", label: "Restore role permission" },
+                  ],
+                },
+              ]}
+              transform={(d) => ({ ...d, denied: d.denied === "true" })}
+            />
+            {permissions.data?.restrictions
+              .filter((r: any) => r.denied)
+              .map((r: any) => (
+                <div className="record" key={r.id}>
+                  <strong>
+                    {users.data?.items.find((u: any) => u.id === r.user_id)?.name ||
+                      r.user_id}
+                  </strong>
+                  <small>{r.action}</small>
+                </div>
+              ))}
+          </>
+        )}
       </Panel>
 
       <Panel
