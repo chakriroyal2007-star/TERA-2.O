@@ -487,12 +487,18 @@ async def companion_chat(
     # Check human escalation requirement
     if ai_res.get("requires_human_escalation"):
         session.status = "escalation_required"
+        # `reason` is a short indexed label (VARCHAR(100)); retain the full
+        # clinical context in details so an urgent escalation cannot fail.
+        escalation_reason = "AI companion detected high danger"
         db.add(
             AIEscalationEvent(
                 session_id=session.id,
                 incident_id=session.incident_id,
-                reason=f"AI Companion detected high danger: {ai_res.get('risk_assessment')}",
-                details=data.message,
+                reason=escalation_reason,
+                details=(
+                    f"Risk assessment: {ai_res.get('risk_assessment', '')}\n"
+                    f"Citizen update: {data.message}"
+                )[:2000],
                 escalation_level="urgent_dispatch",
             )
         )

@@ -189,12 +189,15 @@ IMPORTANT RULES:
             logger.warning(f"AI LLM generation fallback triggered: {last_error}")
             parsed_result = cls._build_rule_based_response(incident_context, user_message, lang)
 
-        # Video matching
-        video_info = None
+        # The most recent citizen message takes precedence over the initial
+        # category: a road collision can become a CPR emergency.
+        video_info = find_video_for_situation(
+            f"{user_message or ''} {parsed_result.get('message', '')}", ""
+        )
         vid_cat = parsed_result.get("video_category", "")
-        if vid_cat and vid_cat != "none" and vid_cat in VERIFIED_EMERGENCY_VIDEOS:
+        if not video_info and vid_cat and vid_cat != "none" and vid_cat in VERIFIED_EMERGENCY_VIDEOS:
             video_info = VERIFIED_EMERGENCY_VIDEOS[vid_cat]
-        else:
+        elif not video_info:
             # Automatic heuristic detection based on combined context
             context_text = f"{incident_context.get('category', '')} {incident_context.get('description', '')} {user_message or ''} {parsed_result.get('message', '')}"
             video_info = find_video_for_situation(context_text, incident_context.get("category", ""))
