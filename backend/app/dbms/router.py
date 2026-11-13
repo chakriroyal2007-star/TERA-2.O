@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from app.db import engine, get_db
-from app.security import roles, current
+from app.security import current
 from .introspect import (
     get_dbms_overview,
     get_all_tables_metadata,

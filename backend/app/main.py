@@ -17,6 +17,9 @@ app = FastAPI(title="TERA coordination API", version="2.0.0", docs_url="/api/doc
 
 @app.on_event("startup")
 def startup_event():
+    import os
+    if os.environ.get("TESTING") == "true":
+        return
     try:
         from .db import engine, Base, SessionLocal
         from .bootstrap import bootstrap_defaults

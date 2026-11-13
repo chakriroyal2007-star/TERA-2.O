@@ -1,4 +1,5 @@
 import secrets
+import jwt
 from datetime import timedelta, timezone
 from typing import Literal, Annotated
 import pyotp
