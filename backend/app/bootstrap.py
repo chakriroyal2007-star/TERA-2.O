@@ -270,8 +270,12 @@ def bootstrap_defaults(db):
             ("TERA-AMB-08", "Advanced Cardiac Life Support (ACLS)", "Vikram Reddy", "+91 98497 10808"),
         ]
 
-        for amb_reg, vtype, driver, phone in ambulances_seed:
+        for idx, (amb_reg, vtype, driver, phone) in enumerate(ambulances_seed):
             amb = db.scalar(select(m.Ambulance).where(m.Ambulance.registration == amb_reg))
+            lat_offset = 13.6250 + (idx * 0.006)
+            lng_offset = 79.4150 + (idx * 0.005)
+            cap = 2 if "Basic" not in vtype else 1
+            eq = "ALS" if "Advanced" in vtype or "Cardiac" in vtype else "BLS"
             if not amb:
                 db.add(m.Ambulance(
                     organization_id=org.id,
@@ -279,6 +283,11 @@ def bootstrap_defaults(db):
                     vehicle_type=vtype,
                     driver_name=driver,
                     driver_phone=phone,
+                    patient_capacity=cap,
+                    equipment_level=eq,
+                    current_latitude=lat_offset,
+                    current_longitude=lng_offset,
+                    current_speed=0.0,
                     active=True,
                 ))
             else:
@@ -286,6 +295,12 @@ def bootstrap_defaults(db):
                 amb.driver_name = driver
                 amb.driver_phone = phone
                 amb.active = True
+                amb.patient_capacity = cap
+                amb.equipment_level = eq
+                if amb.current_latitude is None:
+                    amb.current_latitude = lat_offset
+                    amb.current_longitude = lng_offset
+                    amb.current_speed = 0.0
 
         # 6. Associate Users (Coordinators & Responders) and Ambulances to Specific Hospitals
         h_city = db.scalar(select(m.Hospital.id).where(m.Hospital.name == "City Central Emergency Hospital"))

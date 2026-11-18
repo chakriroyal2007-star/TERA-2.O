@@ -101,7 +101,7 @@ async def rank_ambulances_for_incident(
 
         # 2. ETA Calculation
         try:
-            route_res = await routing_svc.calculate_route(amb_lat, amb_lng, inc_lat, inc_lng)
+            route_res = await routing_svc.get_directions((amb_lat, amb_lng), (inc_lat, inc_lng))
             eta_seconds = route_res.duration_seconds
             distance_meters = route_res.distance_meters
             routing_provider = route_res.provider

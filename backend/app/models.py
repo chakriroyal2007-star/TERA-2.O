@@ -180,6 +180,8 @@ class Incident(Identity, Base):
     hoax_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     hoax_flagged_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    priority_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    priority_breakdown: Mapped[dict | None] = mapped_column(JSON, default=dict)
 
     __table_args__ = (
         CheckConstraint("casualties_count >= 0", name="incident_casualties_nonnegative"),
@@ -356,6 +358,11 @@ class Ambulance(Identity, Base):
     driver_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     vehicle_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default="Advanced Life Support (ALS)")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    patient_capacity: Mapped[int] = mapped_column(Integer, default=2)
+    equipment_level: Mapped[str | None] = mapped_column(String(50), default="ALS")
+    current_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_speed: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class Mission(Identity, Base):
@@ -383,7 +390,6 @@ class Mission(Identity, Base):
         CheckConstraint(
             "status IN ('assigned','acknowledged','en_route','on_scene','transporting','handover','completed','cancelled')"
         ),
-        Index("uq_active_mission_per_incident", "incident_id", unique=True, postgresql_where=text("status NOT IN ('completed', 'cancelled')")),
         Index("one_active_ambulance", "ambulance_id", unique=True, postgresql_where=text("status NOT IN ('completed', 'cancelled')")),
         Index("one_active_responder", "responder_id", unique=True, postgresql_where=text("status NOT IN ('completed', 'cancelled')")),
     )
@@ -729,3 +735,14 @@ class RoleRequest(Identity, Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
     requested_role: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(24), default="pending")
+
+
+class OptimizationExecution(Identity, Base):
+    __tablename__ = "optimization_executions"
+    algorithm: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="completed")
+    input_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    execution_time_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+

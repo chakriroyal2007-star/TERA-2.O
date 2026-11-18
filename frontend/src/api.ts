@@ -114,6 +114,8 @@ export interface Incident {
   longitude: number | null;
   status: string;
   priority: string;
+  priority_score?: number | null;
+  priority_breakdown?: any;
   detected_language?: string;
   english_translation?: string;
   casualties_count?: number;

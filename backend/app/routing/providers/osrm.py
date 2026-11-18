@@ -78,6 +78,6 @@ class OSRMRoutingProvider(BaseRoutingProvider):
                 try:
                     return await self._fetch_from_url(self.PUBLIC_OSRM_FALLBACK, lat1, lon1, lat2, lon2)
                 except Exception as fb_err:
-                    raise RoutingProviderError(f"OSRM primary and fallback both failed: {primary_err} / {fb_err}") from fb_err
-            raise RoutingProviderError(f"OSRM failed: {primary_err}") from primary_err
+                    raise RoutingProviderError(f"OSRM connection failed: primary and fallback both failed: {primary_err} / {fb_err}") from fb_err
+            raise RoutingProviderError(f"OSRM connection failed: {primary_err}") from primary_err
 

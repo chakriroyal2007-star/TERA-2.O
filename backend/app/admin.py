@@ -235,7 +235,7 @@ def fleet(
     limit: int = Query(100, ge=1, le=100),
 ):
     q = select(Ambulance)
-    if user.role != "admin":
+    if user.role not in ("admin", "operator", "analyst") and user.organization_id:
         q = q.where(Ambulance.organization_id == user.organization_id)
     busy = set(db.scalars(select(Mission.ambulance_id).where(~Mission.status.in_(["completed", "cancelled"]))))
     result = []

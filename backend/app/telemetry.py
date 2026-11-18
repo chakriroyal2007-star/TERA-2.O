@@ -95,6 +95,11 @@ def ingest_mission_telemetry(
             inc.status = "active"
 
     amb = db.get(Ambulance, mission.ambulance_id)
+    if amb:
+        amb.current_latitude = data.latitude
+        amb.current_longitude = data.longitude
+        if data.speed is not None:
+            amb.current_speed = data.speed
     reg = amb.registration if amb else None
     driver_name = amb.driver_name if amb else None
     driver_phone = amb.driver_phone if amb else None

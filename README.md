@@ -168,6 +168,53 @@ The public `/dbms` link redirects to the authenticated Studio. Operators and ana
 
 Backend changes can be served with `uv run uvicorn app.main:app --reload`; set `PUBLIC_URL` to match the browser origin. Production Compose uses Nginx to proxy both REST and WebSockets. Vercel static hosting alone does not provide this backend, PostgreSQL, Redis or persistent file storage.
 
+## TERA 2.0 Research Optimization Engine & Interactive Map
+
+TERA 2.0 integrates mathematical optimization algorithms, capacity-constrained multi-patient ambulance allocation, Dijkstra shortest path routing on weighted road networks, multi-factor hospital cost ranking, and Swiggy-like live ambulance movement tracking.
+
+### 1. Dynamic Emergency Priority Scoring (Weighted 4-Factor Model)
+
+All simultaneous incidents are prioritized using a dynamic multi-factor model:
+
+$$\text{Priority Score} = 0.40 \times \text{Severity} + 0.25 \times \text{WaitingTime} + 0.20 \times \text{PatientCount} + 0.15 \times \text{ResourceUrgency}$$
+
+- **Severity Score (0–100)**: Critical ($100$), High ($75$), Medium ($50$), Low ($25$).
+- **Waiting Time Score (0–100)**: $+5.0$ points per elapsed minute from report time (max 100).
+- **Patient Count Score (0–100)**: $+25.0$ points per casualty ($1\text{p}=25$, $2\text{p}=50$, $3\text{p}=75$, $\ge 4\text{p}=100$).
+- **Resource Urgency Score (0–100)**: Cardiac, Stroke, Burns, Trauma ($100$), Accidents ($85$), Medical ($60$).
+- **Configurable Weights**: Administrators can adjust weights dynamically via `PATCH /api/v1/optimization/weights`.
+
+### 2. Dijkstra's Shortest Path Road Network Algorithm
+
+- Implemented via a binary min-heap (`heapq`) in `app.optimization.dijkstra`.
+- Real road network nodes (intersections) and weighted edges (road distance in meters and travel time in seconds).
+- Hybrid architecture: Uses OSRM road directions when reachable; executes Dijkstra shortest path on local road graph as validated fallback. Never fabricates straight-line paths as road geometry.
+
+### 3. Capacity-Constrained Multi-Patient Ambulance Allocation
+
+$$\min Z = \sum_{i} \sum_{j} C_{ij} X_{ij}$$
+
+Subject to:
+- $\sum_{i} X_{ij} \le 1$ (no double assignment: each ambulance assigned to at most one incident).
+- $\sum_{j} (\text{Capacity}_j \cdot X_{ij}) \ge \text{Patients}_i$ (satisfies multi-patient casualty counts).
+- Medical suitability: ALS/ICU vehicles dispatched to critical incidents; BLS for minor injuries.
+
+### 4. Multi-Factor Hospital Selection Optimization
+
+$$\text{Hospital Cost} = 0.35 \times \text{TravelTime} + 0.30 \times \text{BedAvailability} + 0.20 \times \text{DepartmentMatch} + 0.15 \times \text{IncomingDemand}$$
+
+- Lower Hospital Cost indicates optimal transfer destination.
+- Evaluates real-time ICU and Emergency bed availability; excludes hospitals on active diversion.
+
+### 5. Swiggy-Style Live Ambulance Movement & Demo Mode
+
+- **Demo Simulation Button**: "Load Emergency Simulation" loads a 5-incident concurrent scenario (A, B, C, D, E).
+- **Smooth Trajectory Movement**: Ambulances smoothly animate along road coordinates with updating speed (44 km/h) and countdown ETA.
+- **Route Segments**: Completed road segments show as a dimmed trailing line; remaining road segments show in vibrant blue.
+- **Milestones**: Automatic on-scene arrival, patient pickup confirmation, dynamic route generation to destination hospital, and hospital handover completion.
+
+---
+
 ## Repository
 
 ```text

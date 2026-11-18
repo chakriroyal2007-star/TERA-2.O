@@ -831,13 +831,13 @@ def duplicate(id: str, data: Duplicate, user=Depends(roles(*OPS)), db=Depends(ge
 @router.post("/incidents/{id}/dispatch", status_code=201)
 def dispatch(id: str, data: Dispatch, user=Depends(roles(*OPS)), db=Depends(get_db)):
     i = get_incident(db, id, user, True)
-    if i.status != "verified":
-        raise HTTPException(409, "Verify the incident before dispatch")
+    if i.status not in ("reported", "verified", "active"):
+        raise HTTPException(409, "Verify or activate the incident before dispatch")
     a = db.scalar(select(Ambulance).where(Ambulance.id == data.ambulance_id).with_for_update())
     r = db.scalar(select(User).where(User.id == data.responder_id).with_for_update())
     if not a or not a.active or not r or r.role != "responder" or r.suspended or not r.verified:
         raise HTTPException(422, "Select an active ambulance and verified responder")
-    if a.organization_id != i.organization_id or r.organization_id != i.organization_id:
+    if a.organization_id and i.organization_id and a.organization_id != i.organization_id:
         raise HTTPException(404, "Resource not found")
     if db.scalar(
         select(Mission.id).where(
@@ -867,6 +867,8 @@ def dispatch(id: str, data: Dispatch, user=Depends(roles(*OPS)), db=Depends(get_
         ).first()
         if last_loc and last_loc[0] is not None and last_loc[1] is not None:
             origin = (float(last_loc[0]), float(last_loc[1]))
+        elif a.current_latitude is not None and a.current_longitude is not None:
+            origin = (float(a.current_latitude), float(a.current_longitude))
         else:
             hosp_loc = db.execute(
                 select(Hospital.latitude, Hospital.longitude)
@@ -884,7 +886,8 @@ def dispatch(id: str, data: Dispatch, user=Depends(roles(*OPS)), db=Depends(get_
     # Calculate route if both points known
     if origin and destination:
         try:
-            route_res = asyncio.run(RoutingService().get_directions(origin, destination))
+            from .optimization.dijkstra import calculate_shortest_road_route
+            route_res = asyncio.run(calculate_shortest_road_route(origin, destination))
             m.decision_eta_seconds = int(route_res.duration_seconds) if route_res.duration_seconds is not None else None
             m.decision_distance_meters = float(route_res.distance_meters)
             m.decision_route_polyline = json.dumps(route_res.polyline)
@@ -915,7 +918,7 @@ def dispatch(id: str, data: Dispatch, user=Depends(roles(*OPS)), db=Depends(get_
     i.status = "dispatched"
     record(db, "mission.assigned", i, user, mission_id=m.id)
     db.commit()
-    return serial(m)
+    return serialize_mission_details(db, m)
 
 
 def serialize_mission_details(db, m: Mission) -> dict:
@@ -1067,10 +1070,10 @@ def get_mission(
 
 
 @router.post("/missions/{id}/progress")
-def progress(id: str, data: Progress, user=Depends(roles("responder")), db=Depends(get_db)):
+def progress(id: str, data: Progress, user=Depends(roles("responder", "operator", "admin")), db=Depends(get_db)):
     # Consistent lock order: incident, mission, referral, capacity.
     m = db.get(Mission, id)
-    if not m or m.responder_id != user.id:
+    if not m or (user.role == "responder" and m.responder_id != user.id):
         raise HTTPException(404, "Mission not found")
     i = get_incident(db, m.incident_id, user, True)
     m = db.scalar(select(Mission).where(Mission.id == id).with_for_update().execution_options(populate_existing=True))
