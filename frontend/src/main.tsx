@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { queryClient } from "./api";
 import { App } from "./App";
+import "leaflet/dist/leaflet.css";
 import "./styles.css";
 
 class GlobalErrorBoundary extends Component<

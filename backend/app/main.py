@@ -137,7 +137,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Permissions-Policy"] = "geolocation=(self), camera=(), microphone=(self)"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; object-src 'none';"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://*.cartocdn.com https://unpkg.com; frame-ancestors 'none'; object-src 'none';"
     if settings().environment == "production" or settings().public_url.startswith("https://"):
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
     return response

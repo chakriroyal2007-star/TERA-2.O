@@ -554,10 +554,27 @@ footer > a:last-child {
   font-size: 12px;
 }
 .map {
-  height: 300px;
+  height: 380px;
+  min-height: 380px;
   width: 100%;
-  border-radius: 5px;
+  border-radius: 8px;
   z-index: 0;
+  position: relative;
+  overflow: hidden;
+}
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 380px;
+  background: #0f172a !important;
+  font-family: inherit;
+  outline: none;
+}
+.leaflet-tile-pane {
+  opacity: 1 !important;
+}
+.leaflet-tile {
+  visibility: inherit !important;
 }
 .info-card {
   padding: 28px;

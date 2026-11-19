@@ -12,12 +12,19 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix Leaflet's default icon url issues in bundled environments
+// Self-contained embedded SVG default marker icon (zero external CDN or unpkg dependency)
+const defaultMarkerSvg = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="24" height="36">
+  <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#0284c7" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="12" cy="12" r="5" fill="#ffffff"/>
+</svg>
+`)}`;
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconRetinaUrl: defaultMarkerSvg,
+  iconUrl: defaultMarkerSvg,
+  shadowUrl: "",
 });
 
 export interface Point {
@@ -274,14 +281,39 @@ function ClickHandler({ onLocationSelect }: { onLocationSelect?: (lat: number, l
 function InvalidateSizeHandler() {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 120);
+    // Run immediate and multiple staggered invalidations to catch every flex/grid/animation phase
+    map.invalidateSize();
+    const t1 = setTimeout(() => map.invalidateSize(), 50);
+    const t2 = setTimeout(() => map.invalidateSize(), 150);
+    const t3 = setTimeout(() => map.invalidateSize(), 400);
+    const t4 = setTimeout(() => map.invalidateSize(), 1000);
+
     const handleResize = () => map.invalidateSize();
     window.addEventListener("resize", handleResize);
+    document.addEventListener("visibilitychange", handleResize);
+
+    // Watch container DOM resizing directly
+    let ro: ResizeObserver | null = null;
+    try {
+      const container = map.getContainer();
+      if (container && typeof ResizeObserver !== "undefined") {
+        ro = new ResizeObserver(() => {
+          map.invalidateSize();
+        });
+        ro.observe(container);
+      }
+    } catch {
+      // Ignore if ResizeObserver is unavailable
+    }
+
     return () => {
-      clearTimeout(timer);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
       window.removeEventListener("resize", handleResize);
+      document.removeEventListener("visibilitychange", handleResize);
+      if (ro) ro.disconnect();
     };
   }, [map]);
   return null;
@@ -349,6 +381,7 @@ export function Map({
   const [showRoutesLayer, setShowRoutesLayer] = useState(true);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [fitTrigger, setFitTrigger] = useState(0);
+  const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
 
   // Normalize single and multi item props
   const allIncidents: IncidentMarkerProps[] = useMemo(() => {
@@ -543,6 +576,24 @@ export function Map({
           >
             🎯 Fit All
           </button>
+
+          <button
+            type="button"
+            onClick={() => setTileProvider((prev) => (prev === "osm" ? "carto" : "osm"))}
+            style={{
+              background: "#1e293b",
+              color: "#38bdf8",
+              border: "1px solid #475569",
+              borderRadius: "4px",
+              padding: "3px 8px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: "11px",
+            }}
+            title="Toggle between OpenStreetMap and Carto tile servers"
+          >
+            {tileProvider === "osm" ? "🗺️ OSM" : "🧭 Carto"}
+          </button>
         </div>
       )}
 
@@ -554,12 +605,35 @@ export function Map({
         style={{ width: "100%", height: "100%", minHeight: "420px" }}
         scrollWheelZoom={true}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
-        />
+        {tileProvider === "osm" ? (
+          <TileLayer
+            key="osm-tile-layer"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            subdomains="abc"
+            maxZoom={19}
+            eventHandlers={{
+              tileerror: () => {
+                console.warn("Primary OSM tile layer error; automatically falling back to Carto");
+                setTileProvider("carto");
+              },
+            }}
+          />
+        ) : (
+          <TileLayer
+            key="carto-tile-layer"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            subdomains="abcd"
+            maxZoom={20}
+            eventHandlers={{
+              tileerror: () => {
+                console.warn("Carto tile layer error; switching back to OSM");
+                setTileProvider("osm");
+              },
+            }}
+          />
+        )}
 
         <InvalidateSizeHandler />
         {interactive && <ClickHandler onLocationSelect={onLocationSelect} />}
@@ -807,13 +881,27 @@ export function Map({
             );
           })}
 
-        {/* 6. Legacy Generic Points (Backwards Compatibility) */}
+        {/* 6. Active Location Marker for Citizen Reports & Points */}
         {validPoints.map((p, i) => (
-          <CircleMarker
+          <Marker
             key={`point-${i}`}
-            center={[p.lat, p.lng]}
-            radius={8}
-            pathOptions={{ color: "#0284c7", fillColor: "#38bdf8", fillOpacity: 0.9, weight: 2 }}
+            position={[p.lat, p.lng]}
+            icon={L.divIcon({
+              className: "custom-point-marker",
+              html: `
+                <div style="position: relative; display: flex; flex-direction: column; align-items: center; width: 40px; height: 48px;">
+                  <div style="position: absolute; top: 0; width: 36px; height: 36px; border-radius: 50%; background: rgba(239, 68, 68, 0.4); animation: pulse-critical-beacon 1.8s infinite ease-out;"></div>
+                  <div style="position: relative; width: 32px; height: 32px; border-radius: 50%; background: #dc2626; border: 2.5px solid #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 15px;">
+                    📍
+                  </div>
+                  <div style="background: rgba(15, 23, 42, 0.95); color: #f8fafc; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-top: 2px; border: 1px solid #334155; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">
+                    ${p.name || "Incident Location"}
+                  </div>
+                </div>
+              `,
+              iconSize: [40, 48],
+              iconAnchor: [20, 32],
+            })}
           >
             <Popup>
               <strong>{p.name || "Location Pin"}</strong>
@@ -824,7 +912,7 @@ export function Map({
                 </>
               )}
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
       </MapContainer>
 
